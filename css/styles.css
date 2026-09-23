@@ -23,21 +23,24 @@
 }
 
 :root {
-  --bg: #F6F2EC;
-  --surface: #FFFDF9;
-  --surface-2: #EFE9E0;
-  --ink: #211E1B;
-  --ink-2: #5E574F;
-  --ink-3: #978E83;
-  --line: rgba(33, 30, 27, 0.09);
-  --line-strong: rgba(33, 30, 27, 0.18);
-  --primary: #24201D;
-  --primary-ink: #FBF8F3;
-  --focus: #7B68B5;
-  --glow-a: rgba(242, 184, 156, 0.35);
-  --glow-b: rgba(196, 180, 222, 0.32);
-  --on-pastel: #2A2521;
-  --shadow: 0 1px 2px rgba(33, 30, 27, 0.04), 0 8px 24px -12px rgba(33, 30, 27, 0.12);
+  --bg: #F7F6F2;
+  --surface: #FFFFFF;
+  --surface-2: #EDF1F6;
+  --ink: #1D2838;
+  --ink-2: #4D5A6C;
+  --ink-3: #8792A2;
+  --line: rgba(29, 40, 56, 0.09);
+  --line-strong: rgba(29, 40, 56, 0.17);
+  --primary: #3F6FB5;
+  --primary-ink: #FFFFFF;
+  --accent-soft: #E4EDF9;
+  --focus: #3F6FB5;
+  --glow-a: rgba(244, 190, 79, 0.22);
+  --glow-b: rgba(91, 139, 208, 0.24);
+  --on-pastel: #26303D;
+  --logo-blue: #4F7FC4;
+  --logo-fill: #E4EDF9;
+  --shadow: 0 1px 2px rgba(29, 40, 56, 0.04), 0 8px 24px -12px rgba(29, 40, 56, 0.14);
   --serif: "Fraunces", Georgia, "Times New Roman", serif;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -46,19 +49,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141317;
-    --surface: #1C1B20;
-    --surface-2: #26242B;
-    --ink: #F2EDE6;
-    --ink-2: #BEB6AB;
-    --ink-3: #857D73;
+    --bg: #0F1520;
+    --surface: #161E2C;
+    --surface-2: #1E2839;
+    --ink: #EDF1F7;
+    --ink-2: #AAB6C6;
+    --ink-3: #758296;
     --line: rgba(255, 255, 255, 0.07);
-    --line-strong: rgba(255, 255, 255, 0.16);
-    --primary: #F2EDE6;
-    --primary-ink: #17161A;
-    --focus: #B8A8E8;
-    --glow-a: rgba(214, 140, 110, 0.16);
-    --glow-b: rgba(140, 120, 200, 0.16);
+    --line-strong: rgba(255, 255, 255, 0.15);
+    --primary: #8EB2EA;
+    --primary-ink: #0F1520;
+    --accent-soft: #1F2D45;
+    --focus: #8EB2EA;
+    --glow-a: rgba(244, 190, 79, 0.08);
+    --glow-b: rgba(91, 139, 208, 0.18);
+    --logo-blue: #7FA6E2;
+    --logo-fill: #1C2A42;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
     color-scheme: dark;
   }
@@ -319,27 +325,27 @@ a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; 
   will-change: transform;
 }
 .breath-halo {
-  border: 1px solid color-mix(in srgb, #D9A48F 55%, transparent);
-  background: radial-gradient(circle, transparent 55%, color-mix(in srgb, #E9B9A5 22%, transparent) 100%);
+  border: 1px solid color-mix(in srgb, #7FA6E2 50%, transparent);
+  background: radial-gradient(circle, transparent 55%, color-mix(in srgb, #A9C6EC 22%, transparent) 100%);
   opacity: 0.15;
 }
-.halo-2 { border-color: color-mix(in srgb, #C4A9D6 55%, transparent); }
-.halo-3 { border-color: color-mix(in srgb, #A9BDD8 55%, transparent); }
+.halo-2 { border-color: color-mix(in srgb, #F4BE4F 45%, transparent); }
+.halo-3 { border-color: color-mix(in srgb, #EFA67C 45%, transparent); }
 .breath-orb {
   background:
-    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.85), transparent 42%),
-    radial-gradient(circle at 70% 78%, #BFA5D6 0%, transparent 60%),
-    linear-gradient(160deg, #FBE3D2 0%, #EFB9A2 45%, #CFA8C9 100%);
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 70% 22%, rgba(255, 221, 150, 0.75), rgba(255, 221, 150, 0) 34%),
+    linear-gradient(170deg, #F1F6FD 0%, #C6D9F3 42%, #8FB2E4 78%, #7299D6 100%);
   box-shadow:
-    inset 0 -10px 30px rgba(120, 80, 110, 0.18),
-    0 20px 60px -10px rgba(214, 150, 140, 0.45);
+    inset 0 -12px 30px rgba(40, 70, 130, 0.18),
+    0 20px 60px -10px rgba(79, 127, 196, 0.45);
   display: grid;
   place-items: center;
 }
 .orb-glow {
   position: absolute; inset: -18%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(239, 185, 162, 0.55), rgba(191, 165, 214, 0.3) 50%, transparent 72%);
+  background: radial-gradient(circle, rgba(160, 194, 240, 0.55), rgba(244, 190, 79, 0.22) 50%, transparent 72%);
   filter: blur(18px);
   z-index: -1;
 }
@@ -718,3 +724,51 @@ a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; 
 .share-card { grid-template-columns: minmax(0, 1fr); }
 .share-card > * { min-width: 0; }
 .summary-intention { justify-items: center; }
+
+/* ---------- logo ---------- */
+.logo { display: inline-grid; place-items: center; flex: none; }
+.logo svg { display: block; }
+.summary-mark { animation: none; }
+
+/* ---------- multi-select ---------- */
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: inherit; }
+.summary-feeling .chip-row, .invite-card .chip-row { justify-content: center; }
+.invite-card .chip-row { justify-content: flex-start; }
+.btn-soft { background: var(--accent-soft); color: var(--ink); }
+.btn-soft:hover { filter: brightness(0.98); }
+.btn-soft .icon { width: 18px; height: 18px; }
+.decision-others { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: center; margin-bottom: 8px; }
+.tray {
+  display: grid; gap: 10px;
+  margin: 0 0 8px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.tray-top { display: flex; align-items: center; justify-content: space-between; }
+.tray-go { color: var(--primary); font-weight: 600; padding: 4px 0; }
+.tray-go:hover { color: var(--primary); opacity: 0.85; }
+.chip-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.chip-x {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: transparent; color: var(--ink-3);
+}
+.chip-x:hover { background: var(--surface-2); color: var(--ink); }
+.chip-x .icon { width: 16px; height: 16px; }
+.focus-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.focus-tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px 8px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  font-size: 14.5px; font-weight: 600; color: var(--ink-2);
+}
+.focus-tab.is-active { background: color-mix(in srgb, var(--chip) 40%, var(--surface)); border-color: color-mix(in srgb, var(--chip) 70%, transparent); color: var(--ink); }
+.share-preview {
+  max-width: 400px; margin: 8px 0 0;
+  font-family: var(--serif); font-style: italic; font-size: 18px; line-height: 1.45; color: var(--ink-2);
+}
+.invite-feeling { font-size: 24px; }

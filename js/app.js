@@ -4,8 +4,9 @@
 
 import { APP_NAME } from "./config.js";
 import { ATLAS } from "./data/atlas.js";
-import { PLACES, INSIGHTS } from "./data/insights.js";
-import { createWheel, placeOf, tint, miniWheel } from "./wheel.js";
+import { PLACES, INSIGHTS, SHARE } from "./data/insights.js";
+import { createWheel, placeOf, tint } from "./wheel.js";
+import { logo } from "./logo.js";
 import { createBreath } from "./breath.js";
 import * as store from "./storage.js";
 
@@ -81,6 +82,26 @@ function chip(key) {
     h("span", { class: "chip-dot" }), feelingName(key));
 }
 
+const MAX_FEELINGS = 3;
+
+function chips(keys) {
+  return h("div", { class: "chip-row" }, keys.map((k) => chip(k)));
+}
+
+function listWords(words) {
+  if (words.length <= 1) return words[0] || "";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
+function entryFeelings(e) {
+  const list = Array.isArray(e.feelings) ? e.feelings : e.feeling ? [e.feeling] : [];
+  return list.filter((k) => ATLAS[k]);
+}
+
+function resetFlow() {
+  Object.assign(flow, { intention: "", note: "", key: null, placeId: null, selected: [], focus: null });
+}
+
 function baseUrl() {
   return location.origin + location.pathname;
 }
@@ -94,6 +115,8 @@ const flow = {
   from: null, // screen we came from, for back buttons
   intention: "",
   note: "",
+  selected: [], // confirmed feelings, in the order they were picked
+  focus: null, // which selected feeling the intention screen is showing
   entryId: null,
   placeId: null
 };
@@ -106,9 +129,9 @@ function readInvite() {
   const q = location.hash.split("?")[1];
   if (!q) return;
   const params = new URLSearchParams(q);
-  const feel = params.get("feel");
-  if (feel && ATLAS[feel]) {
-    invite = { feel, from: (params.get("from") || "").slice(0, 40) };
+  const feels = (params.get("feel") || "").split(",").filter((k) => ATLAS[k]).slice(0, MAX_FEELINGS);
+  if (feels.length) {
+    invite = { feels, from: (params.get("from") || "").slice(0, 40) };
     try { sessionStorage.setItem("iw.invite", JSON.stringify(invite)); } catch {}
   }
 }
@@ -117,7 +140,11 @@ function restoreInvite() {
   if (invite) return;
   try {
     const raw = sessionStorage.getItem("iw.invite");
-    if (raw) invite = JSON.parse(raw);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      const feels = (saved.feels || [saved.feel]).filter((k) => ATLAS[k]);
+      if (feels.length) invite = { feels, from: saved.from || "" };
+    }
   } catch {}
 }
 
@@ -149,11 +176,11 @@ function renderPage(content, { bare = false } = {}) {
 
 function topbar() {
   const onFlow = !location.hash.startsWith("#/journal") && !location.hash.startsWith("#/about");
-  const mark = miniWheel(22);
+  const mark = logo(30, "logo wordmark-logo");
   return h("header", { class: "topbar" },
     h("button", {
       class: "wordmark", type: "button", "aria-label": `${APP_NAME}, start over`,
-      onClick: () => { flow.intention = ""; flow.note = ""; flow.key = null; go("welcome"); }
+      onClick: () => { resetFlow(); go("welcome"); }
     }, mark, h("span", {}, APP_NAME)),
     h("nav", { class: "topbar-actions" },
       iconButton("journal", "Journal", () => { location.hash = "#/journal"; }, onFlow ? "" : (location.hash.startsWith("#/journal") ? "is-active" : "")),
@@ -176,10 +203,13 @@ function welcomeScreen() {
   const wrap = h("section", { class: "welcome" });
 
   if (invite) {
-    const place = placeOf(invite.feel);
+    const place = placeOf(invite.feels[0]);
     wrap.appendChild(h("div", { class: "invite-card", style: { "--chip": place.color } },
       h("p", { class: "eyebrow" }, invite.from ? `${invite.from} checked in` : "Someone checked in"),
-      h("p", { class: "invite-feeling" }, h("span", { class: "chip-dot" }), feelingName(invite.feel)),
+      h("p", { class: "invite-feeling" }, (() => {
+        const t = listWords(invite.feels.map((k) => (SHARE[k] ? SHARE[k][0] : feelingName(k).toLowerCase())));
+        return `Feeling ${t}`;
+      })()),
       h("p", { class: "invite-note" }, `${invite.from || "They"} would love to know how you're doing. Take a minute, then send yours back.`)
     ));
   }
@@ -234,7 +264,24 @@ function wheelScreen() {
     }
   });
 
-  add(wrap, h("div", { class: "screen-head" }, title, sub), h("div", { class: "wheel-frame" }, back, wheel.el), searchBlock());
+  let tray = null;
+  if (flow.selected.length) {
+    title.textContent = flow.selected.length >= MAX_FEELINGS ? "That's plenty." : "What else is here?";
+    tray = h("div", { class: "tray" },
+      h("div", { class: "tray-top" },
+        h("p", { class: "eyebrow" }, "Named so far"),
+        h("button", { class: "text-btn tray-go", type: "button", onClick: () => go("intention", { focus: flow.selected[0] }) }, "Continue", icon("arrow"))
+      ),
+      h("div", { class: "chip-row" }, flow.selected.map((k) =>
+        h("span", { class: "chip-wrap" }, chip(k),
+          h("button", {
+            class: "chip-x", type: "button", "aria-label": `Remove ${feelingName(k)}`,
+            onClick: () => { flow.selected = flow.selected.filter((x) => x !== k); renderFlow(); }
+          }, icon("close")))))
+    );
+  }
+
+  add(wrap, h("div", { class: "screen-head" }, title, sub), tray, h("div", { class: "wheel-frame" }, back, wheel.el), searchBlock());
   requestAnimationFrame(() => {
     wheel.mount();
     if (flow.placeId) {
@@ -303,6 +350,9 @@ function feelingScreen() {
   const a = ATLAS[key];
   const place = placeOf(key);
   const wrap = h("section", { class: "feeling-screen", style: { "--chip": place.color } });
+  const others = flow.selected.filter((k) => k !== key);
+  const canAddMore = others.length + 1 < MAX_FEELINGS;
+  const confirm = () => { if (!flow.selected.includes(key)) flow.selected = [...flow.selected, key]; };
 
   // Optional space to explore the feeling in your own words.
   const note = h("textarea", {
@@ -334,8 +384,10 @@ function feelingScreen() {
     careNote(a.care),
     h("div", { class: "explore" }, exploreToggle, explorePanel),
     h("div", { class: "decision" },
+      others.length ? h("div", { class: "decision-others" }, h("span", { class: "muted small" }, "Also named:"), chips(others)) : null,
       h("p", { class: "decision-q" }, "Does this sound like what you're feeling?"),
-      h("button", { class: "btn btn-primary", type: "button", onClick: () => go("intention", { intention: "" }) }, "Yes, that's it"),
+      h("button", { class: "btn btn-primary", type: "button", onClick: () => { confirm(); go("intention", { focus: flow.selected[0] }); } }, "Yes, that's it"),
+      canAddMore ? h("button", { class: "btn btn-soft", type: "button", onClick: () => { confirm(); go("wheel", { placeId: null }); } }, icon("plus"), "Yes, and there's more") : null,
       h("button", { class: "btn btn-quiet", type: "button", onClick: () => go("closer") }, "Not quite")
     )
   );
@@ -380,7 +432,8 @@ function closerScreen() {
 
 // ---------- intention ----------
 function intentionScreen() {
-  const key = flow.key;
+  if (!flow.selected.length && flow.key) flow.selected = [flow.key];
+  const key = flow.selected.includes(flow.focus) ? flow.focus : flow.selected[0];
   const ins = INSIGHTS[key];
   const place = placeOf(key);
   const wrap = h("section", { class: "intention-screen", style: { "--chip": place.color, "--chip-soft": tint(place.color, 0.6) } });
@@ -412,7 +465,14 @@ function intentionScreen() {
   }));
 
   add(wrap, 
-    backBar(feelingName(key), () => go("feeling")),
+    backBar(flow.selected.length > 1 ? "Back to the wheel" : feelingName(key), () =>
+      flow.selected.length > 1 ? go("wheel", { placeId: null }) : go("feeling", { key })),
+    flow.selected.length > 1 ? h("div", { class: "focus-tabs", role: "tablist", "aria-label": "Your feelings" },
+      flow.selected.map((k) => h("button", {
+        class: `focus-tab ${k === key ? "is-active" : ""}`, type: "button", role: "tab",
+        "aria-selected": k === key ? "true" : "false", style: { "--chip": placeOf(k).color },
+        onClick: () => { if (k !== key) go("intention", { focus: k }); }
+      }, h("span", { class: "chip-dot" }), feelingName(k)))) : null,
     h("div", { class: "signal-card" },
       h("p", { class: "eyebrow" }, h("span", { class: "chip-dot" }), `What ${feelingName(key).toLowerCase()} may be telling you`),
       h("p", { class: "signal" }, ins.signal)
@@ -434,7 +494,7 @@ function finish() {
   const entry = {
     id: store.makeId(),
     ts: new Date().toISOString(),
-    feeling: flow.key,
+    feelings: [...flow.selected],
     intention: (flow.intention || "").trim(),
     note: (flow.note || "").trim(),
     replyTo: invite ? invite.from || "someone" : null
@@ -451,8 +511,20 @@ const CLOSERS = [
   "Now you know what you're bringing with you."
 ];
 
+// The first feeling sets the tone; every feeling appears in the list.
+function shareMessage(keys, replying, link) {
+  const words = keys.map((k) => (SHARE[k] ? SHARE[k][0] : feelingName(k).toLowerCase()));
+  const line = (SHARE[keys[0]] ? SHARE[keys[0]][1] : "I'm feeling {f} right now. How are you feeling?").replace("{f}", listWords(words));
+  const opener = replying ? "Checking in back." : "Just checking in.";
+  const body = `${opener} ${line}`;
+  if (!link) return body;
+  const cta = replying ? "Here's the link if you want to check in again:" : "Check in here and send yours back:";
+  return `${body}\n\n${cta}\n${link}`;
+}
+
 function doneScreen() {
-  const key = flow.key;
+  const keys = flow.selected.length ? flow.selected : [flow.key];
+  const key = keys[0];
   const place = placeOf(key);
   const intention = (flow.intention || "").trim();
   const settings = store.getSettings();
@@ -467,18 +539,12 @@ function doneScreen() {
   async function share() {
     const name = nameField.value.trim();
     store.saveSettings({ name });
-    const link = `${baseUrl()}#/?${new URLSearchParams({ ...(name ? { from: name } : {}), feel: key }).toString()}`;
-    const lines = [];
-    lines.push(replying
-      ? `I checked in too. I landed on ${feelingName(key)}.`
-      : `I just checked in and landed on ${feelingName(key)}.`);
-    if (intention) lines.push(`My intention: ${intention}`);
-    lines.push("");
-    lines.push(replying ? "Thanks for asking. Here's the link if you want to go again:" : "How are you feeling? Take a minute and send yours back:");
-    const text = lines.join("\n");
+    const params = new URLSearchParams({ ...(name ? { from: name } : {}), feel: keys.join(",") });
+    const link = `${baseUrl()}#/?${params.toString()}`;
+    const text = shareMessage(keys, replying, link);
     try {
       if (navigator.share) {
-        await navigator.share({ text, url: link });
+        await navigator.share({ text });
         status.textContent = "Sent.";
         return;
       }
@@ -486,7 +552,7 @@ function doneScreen() {
       if (err && err.name === "AbortError") return;
     }
     try {
-      await navigator.clipboard.writeText(`${text}\n${link}`);
+      await navigator.clipboard.writeText(text);
       status.textContent = "Copied. Paste it into a message.";
     } catch {
       status.textContent = "Couldn't copy automatically. Here's the link: " + link;
@@ -495,16 +561,17 @@ function doneScreen() {
 
   const shareTitle = replying && invite.from ? `Send yours back to ${invite.from}` : "Share how you're doing";
   const shareSub = replying
-    ? "They'll see what you landed on and your intention."
+    ? "They'll see what you landed on, with a link to check in again."
     : "Send it to someone you love. The link invites them to check in and send theirs back.";
 
   const wrap = h("section", { class: "done-screen", style: { "--chip": place.color, "--chip-soft": tint(place.color, 0.55) } });
   add(wrap, 
     h("div", { class: "summary" },
-      h("div", { class: "summary-mark" }, miniWheel(56)),
+      h("div", { class: "summary-mark" }, logo(64)),
       h("p", { class: "eyebrow" }, new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })),
       h("h1", { class: "display done-title" }, "You named it."),
-      h("div", { class: "summary-feeling" }, chip(key)),
+      h("div", { class: "summary-feeling" }, chips(keys)),
+      h("p", { class: "share-preview" }, shareMessage(keys, replying, null)),
       intention ? h("p", { class: "summary-intention" }, h("span", { class: "eyebrow" }, "Intention"), h("span", { class: "intention-text" }, intention)) : null,
       h("p", { class: "muted small" }, "Saved to your journal on this device.")
     ),
@@ -523,7 +590,7 @@ function doneScreen() {
       onClick: () => {
         invite = null;
         try { sessionStorage.removeItem("iw.invite"); } catch {}
-        flow.intention = ""; flow.note = ""; flow.key = null; flow.placeId = null;
+        resetFlow();
         go("welcome");
       }
     }, "Done")
@@ -542,7 +609,7 @@ function dayLabel(date) {
 }
 
 function journalScreen() {
-  const entries = store.getEntries().filter((e) => ATLAS[e.feeling]);
+  const entries = store.getEntries().filter((e) => entryFeelings(e).length);
   const wrap = h("section", { class: "journal-screen" });
   add(wrap, 
     backBar("Back", () => { location.hash = "#/"; }),
@@ -553,14 +620,14 @@ function journalScreen() {
   );
 
   if (!entries.length) {
-    wrap.appendChild(h("div", { class: "empty" }, miniWheel(72), h("p", {}, "Nothing here yet. Your first check-in will show up here.")));
+    wrap.appendChild(h("div", { class: "empty" }, logo(80), h("p", {}, "Nothing here yet. Your first check-in will show up here.")));
     return wrap;
   }
 
   // Most named in the last 30 days
   const cutoff = Date.now() - 30 * 86400000;
   const counts = {};
-  entries.filter((e) => new Date(e.ts) >= cutoff).forEach((e) => { counts[e.feeling] = (counts[e.feeling] || 0) + 1; });
+  entries.filter((e) => new Date(e.ts) >= cutoff).forEach((e) => entryFeelings(e).forEach((k) => { counts[k] = (counts[k] || 0) + 1; }));
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3);
   if (top.length) {
     wrap.appendChild(h("div", { class: "pattern" },
@@ -577,10 +644,10 @@ function journalScreen() {
       list.appendChild(h("h2", { class: "day-label" }, day));
       lastDay = day;
     }
-    const place = placeOf(e.feeling);
-    list.appendChild(h("article", { class: "entry", style: { "--chip": place.color } },
+    const feels = entryFeelings(e);
+    list.appendChild(h("article", { class: "entry" },
       h("div", { class: "entry-top" },
-        chip(e.feeling),
+        chips(feels),
         h("time", { class: "entry-time", datetime: e.ts }, new Date(e.ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))
       ),
       e.intention ? h("p", { class: "entry-intention" }, e.intention) : null,

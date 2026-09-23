@@ -1,8 +1,8 @@
 // sw.js: offline support. Bump CACHE when you ship changes.
-const CACHE = "iw-v2";
+const CACHE = "iw-v3";
 const SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/styles.css",
-  "./js/app.js", "./js/config.js", "./js/wheel.js", "./js/breath.js", "./js/storage.js",
+  "./js/app.js", "./js/config.js", "./js/wheel.js", "./js/breath.js", "./js/storage.js", "./js/logo.js",
   "./js/data/atlas.js", "./js/data/insights.js", "./icons/icon.svg",
   "./fonts/fraunces.woff2", "./fonts/fraunces-italic.woff2", "./fonts/inter.woff2"
 ];
