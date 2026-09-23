@@ -15,7 +15,7 @@ function reduced() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function createBreath({ cycles = 3, onDone } = {}) {
+export function createBreath({ cycles = 3, onDone, onCycle } = {}) {
   const el = document.createElement("div");
   el.className = "breath is-idle";
   el.innerHTML = `
@@ -93,6 +93,7 @@ export function createBreath({ cycles = 3, onDone } = {}) {
         runPhase(cycle, phaseIndex + 1);
       } else {
         dots[cycle].classList.add("is-done");
+        if (onCycle) onCycle(cycle + 1);
         if (cycle + 1 < cycles) runCycle(cycle + 1);
         else finish();
       }

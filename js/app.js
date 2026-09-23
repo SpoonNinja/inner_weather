@@ -98,8 +98,27 @@ function entryFeelings(e) {
   return list.filter((k) => ATLAS[k]);
 }
 
+function filled(map) {
+  const out = {};
+  for (const [k, v] of Object.entries(map || {})) if ((v || "").trim()) out[k] = v.trim();
+  return out;
+}
+
+// Old entries stored one string; new ones store one per feeling.
+function entryTexts(e, mapField, oldField) {
+  if (e[mapField] && typeof e[mapField] === "object") return Object.entries(e[mapField]).filter(([k, v]) => ATLAS[k] && v);
+  return e[oldField] ? [[null, e[oldField]]] : [];
+}
+
+function textList(pairs, className) {
+  return h("div", { class: `text-list ${className || ""}` }, pairs.map(([k, v]) =>
+    h("div", { class: "text-item" },
+      k && pairs.length > 1 ? h("span", { class: "text-label", style: { "--chip": placeOf(k).color } }, h("span", { class: "chip-dot" }), feelingName(k)) : null,
+      h("p", {}, v))));
+}
+
 function resetFlow() {
-  Object.assign(flow, { intention: "", note: "", key: null, placeId: null, selected: [], focus: null });
+  Object.assign(flow, { intentions: {}, notes: {}, key: null, placeId: null, selected: [], focus: null });
 }
 
 function baseUrl() {
@@ -113,8 +132,8 @@ const flow = {
   screen: "welcome", // welcome | wheel | feeling | closer | intention | done
   key: null,
   from: null, // screen we came from, for back buttons
-  intention: "",
-  note: "",
+  intentions: {}, // feeling key -> intention text
+  notes: {}, // feeling key -> "explore it a little more" text
   selected: [], // confirmed feelings, in the order they were picked
   focus: null, // which selected feeling the intention screen is showing
   entryId: null,
@@ -199,7 +218,12 @@ function renderFlow() {
 // ---------- welcome + breath ----------
 function welcomeScreen() {
   breath && breath.stop();
-  breath = createBreath({ cycles: 3, onDone: () => afterBreath() });
+  breath = createBreath({
+    cycles: 3,
+    onDone: () => afterBreath(),
+    // Skip only appears once the first full breath is done.
+    onCycle: (n) => { if (n >= 1) wrap.classList.add("can-skip"); }
+  });
   const wrap = h("section", { class: "welcome" });
 
   if (invite) {
@@ -359,19 +383,20 @@ function feelingScreen() {
     class: "explore-field", id: "explore", rows: 5, maxlength: 2000,
     placeholder: "What's behind it? Where do you feel it? What is it pulling you toward?"
   });
-  note.value = flow.note || "";
+  const hasNote = !!(flow.notes[key] || "").trim();
+  note.value = flow.notes[key] || "";
   note.addEventListener("input", () => {
-    flow.note = note.value;
+    flow.notes = { ...flow.notes, [key]: note.value };
     note.style.height = "auto";
     note.style.height = `${Math.max(140, note.scrollHeight + 2)}px`;
   });
-  const explorePanel = h("div", { class: "explore-panel", hidden: !flow.note },
-    h("label", { class: "section-title field-label", for: "explore" }, "In your own words"),
+  const explorePanel = h("div", { class: "explore-panel", hidden: !hasNote },
+    h("label", { class: "section-title field-label", for: "explore" }, `In your own words: ${feelingName(key).toLowerCase()}`),
     note,
     h("p", { class: "muted small explore-hint" }, "Just for you. It's saved to your journal, never shared.")
   );
   const exploreToggle = h("button", {
-    class: "explore-toggle", type: "button", hidden: !!flow.note,
+    class: "explore-toggle", type: "button", hidden: hasNote,
     onClick: () => { exploreToggle.hidden = true; explorePanel.hidden = false; note.focus(); }
   }, icon("plus"), h("span", {}, "Explore it a little more"), h("span", { class: "muted small" }, "optional"));
 
@@ -444,15 +469,19 @@ function intentionScreen() {
   const ins = INSIGHTS[key];
   const place = placeOf(key);
   const wrap = h("section", { class: "intention-screen", style: { "--chip": place.color, "--chip-soft": tint(place.color, 0.6) } });
+  const multi = flow.selected.length > 1;
+  const idx = flow.selected.indexOf(key);
+  const nextKey = flow.selected[idx + 1] || null;
 
   const field = h("textarea", {
     class: "intention-field", id: "intention", rows: 3, maxlength: 240,
     placeholder: "For the rest of today, I want to..."
   });
-  field.value = flow.intention || "";
+  field.value = flow.intentions[key] || "";
+  const save = (v) => { flow.intentions = { ...flow.intentions, [key]: v }; };
   const cards = [];
   field.addEventListener("input", () => {
-    flow.intention = field.value;
+    save(field.value);
     cards.forEach((c) => c.classList.toggle("is-chosen", c.dataset.idea === field.value));
   });
 
@@ -461,7 +490,7 @@ function intentionScreen() {
       class: "idea", type: "button", "data-idea": idea, "aria-label": `Use: ${idea}`,
       onClick: () => {
         field.value = idea;
-        flow.intention = idea;
+        save(idea);
         cards.forEach((c) => c.classList.toggle("is-chosen", c === card));
         field.focus();
         field.setSelectionRange(field.value.length, field.value.length);
@@ -479,7 +508,8 @@ function intentionScreen() {
         class: `focus-tab ${k === key ? "is-active" : ""}`, type: "button", role: "tab",
         "aria-selected": k === key ? "true" : "false", style: { "--chip": placeOf(k).color },
         onClick: () => { if (k !== key) go("intention", { focus: k }); }
-      }, h("span", { class: "chip-dot" }), feelingName(k)))) : null,
+      }, h("span", { class: "chip-dot" }), feelingName(k),
+        (flow.intentions[k] || "").trim() ? h("span", { class: "tab-check", "aria-label": "intention set" }, icon("check")) : null))) : null,
     h("div", { class: "signal-card" },
       h("p", { class: "eyebrow" }, h("span", { class: "chip-dot" }), `What ${feelingName(key).toLowerCase()} may be telling you`),
       h("p", { class: "signal" }, ins.signal)
@@ -487,11 +517,18 @@ function intentionScreen() {
     h("h2", { class: "section-title" }, "A few ways to respond"),
     h("p", { class: "muted small section-sub" }, "Tap one to start from it, or write your own."),
     ideas,
-    h("label", { class: "section-title field-label", for: "intention" }, "Your intention"),
+    h("label", { class: "section-title field-label", for: "intention" },
+      multi ? `Your intention for ${feelingName(key).toLowerCase()}` : "Your intention"),
     field,
+    multi ? h("p", { class: "muted small step-note" }, `${idx + 1} of ${flow.selected.length}`) : null,
     h("div", { class: "sticky-actions" },
-      h("button", { class: "btn btn-primary", type: "button", onClick: () => finish() }, "Set my intention"),
-      h("button", { class: "text-btn", type: "button", onClick: () => { flow.intention = ""; finish(); } }, "Skip for now")
+      nextKey
+        ? h("button", { class: "btn btn-primary", type: "button", onClick: () => go("intention", { focus: nextKey }) }, `Next: ${feelingName(nextKey)}`, icon("arrow"))
+        : h("button", { class: "btn btn-primary", type: "button", onClick: () => finish() }, multi ? "Set my intentions" : "Set my intention"),
+      h("button", {
+        class: "text-btn", type: "button",
+        onClick: () => { save(""); nextKey ? go("intention", { focus: nextKey }) : finish(); }
+      }, nextKey ? "Skip this one" : "Skip for now")
     )
   );
   return wrap;
@@ -502,8 +539,8 @@ function finish() {
     id: store.makeId(),
     ts: new Date().toISOString(),
     feelings: [...flow.selected],
-    intention: (flow.intention || "").trim(),
-    note: (flow.note || "").trim(),
+    intentions: filled(flow.intentions),
+    notes: filled(flow.notes),
     replyTo: invite ? invite.from || "someone" : null
   };
   store.addEntry(entry);
@@ -533,7 +570,7 @@ function doneScreen() {
   const keys = flow.selected.length ? flow.selected : [flow.key];
   const key = keys[0];
   const place = placeOf(key);
-  const intention = (flow.intention || "").trim();
+  const intentions = Object.entries(filled(flow.intentions)).filter(([k]) => keys.includes(k));
   const settings = store.getSettings();
   const replying = !!invite;
 
@@ -579,7 +616,9 @@ function doneScreen() {
       h("h1", { class: "display done-title" }, "You named it."),
       h("div", { class: "summary-feeling" }, chips(keys)),
       h("p", { class: "share-preview" }, shareMessage(keys, replying, null)),
-      intention ? h("p", { class: "summary-intention" }, h("span", { class: "eyebrow" }, "Intention"), h("span", { class: "intention-text" }, intention)) : null,
+      intentions.length ? h("div", { class: "summary-intention" },
+        h("span", { class: "eyebrow" }, intentions.length > 1 ? "Intentions" : "Intention"),
+        textList(intentions, "summary-list")) : null,
       h("p", { class: "muted small" }, "Saved to your journal on this device.")
     ),
     h("div", { class: "share-card" },
@@ -657,8 +696,11 @@ function journalScreen() {
         chips(feels),
         h("time", { class: "entry-time", datetime: e.ts }, new Date(e.ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))
       ),
-      e.intention ? h("p", { class: "entry-intention" }, e.intention) : null,
-      e.note ? h("details", { class: "entry-note" }, h("summary", {}, "Reflection"), h("p", {}, e.note)) : null,
+      (() => { const t = entryTexts(e, "intentions", "intention"); return t.length ? textList(t, "entry-intention") : null; })(),
+      (() => {
+        const t = entryTexts(e, "notes", "note");
+        return t.length ? h("details", { class: "entry-note" }, h("summary", {}, t.length > 1 ? "Reflections" : "Reflection"), textList(t)) : null;
+      })(),
       e.replyTo ? h("p", { class: "muted small" }, `In reply to ${e.replyTo}`) : null
     ));
   });
