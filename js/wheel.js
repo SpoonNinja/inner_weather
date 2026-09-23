@@ -1,13 +1,16 @@
 // js/wheel.js
-// The SVG feelings wheel: Overview (all families) and Focus (one family), plus a mini
-// non-interactive version for the home screen.
+// The "places we go" wheel. Overview shows all 13 places and their feelings.
+// Tapping a place opens a focused wheel with just that place's feelings, large enough to read.
 
-import { CORES, WHEEL, WORDS } from "./data/wheel.js";
+import { PLACES } from "./data/insights.js";
+import { ATLAS } from "./data/atlas.js";
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+const NS = "http://www.w3.org/2000/svg";
+const INK = "#2A2521";
+const TOTAL = PLACES.reduce((n, p) => n + p.items.length, 0);
 
 function polar(r, deg) {
-  const a = (deg - 90) * (Math.PI / 180);
+  const a = ((deg - 90) * Math.PI) / 180;
   return [r * Math.cos(a), r * Math.sin(a)];
 }
 
@@ -17,284 +20,244 @@ function arcPath(r0, r1, a0, a1) {
   const [x1, y1] = polar(r1, a1);
   const [x2, y2] = polar(r0, a1);
   const [x3, y3] = polar(r0, a0);
-  if (r0 === 0) return `M0 0 L${x0} ${y0} A${r1} ${r1} 0 ${large} 1 ${x1} ${y1} Z`;
   return `M${x0} ${y0} A${r1} ${r1} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${r0} ${r0} 0 ${large} 0 ${x3} ${y3} Z`;
 }
 
-function svgEl(tag, attrs = {}) {
-  const el = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  return el;
+function node(tag, attrs = {}) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
 }
 
-function reducedMotion() {
-  return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+export function tint(hex, amount) {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) => Math.round(c + (255 - c) * amount);
+  const r = mix(n >> 16), g = mix((n >> 8) & 255), b = mix(n & 255);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
-// selection = Set of keys (wheel word keys, including core ids)
-export function createWheel({ selection, onToggle, announce }) {
-  let view = "overview"; // "overview" | { family: id }
+function wrap(text, maxChars) {
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (next.length > maxChars && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Radial label: reads outward on the right half, flipped on the left so it is never upside down.
+function radialLabel({ text, r0, r1, a0, a1, max, min, weight, pad = 12, className = "" }) {
+  const mid = (((a0 + a1) / 2) % 360 + 360) % 360;
+  const rm = (r0 + r1) / 2;
+  const radialLen = r1 - r0 - pad * 2;
+  const arcWidth = (2 * Math.PI * rm * (a1 - a0)) / 360 - 3;
+  let fs = max;
+  let lines = [text];
+  for (; fs >= min; fs -= 0.5) {
+    const perLine = Math.max(4, Math.floor(radialLen / (fs * 0.56)));
+    lines = wrap(text, perLine);
+    const longest = Math.max(...lines.map((l) => l.length));
+    const fitsRadial = longest * fs * 0.56 <= radialLen;
+    const fitsArc = lines.length * fs * 1.12 <= arcWidth;
+    if (fitsRadial && fitsArc) break;
+  }
+  fs = Math.max(fs, min);
+  const [x, y] = polar(rm, mid);
+  let rot = mid - 90;
+  if (mid > 180) rot += 180;
+  const t = node("text", {
+    transform: `translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(${rot.toFixed(2)})`,
+    "text-anchor": "middle",
+    "font-size": fs,
+    "font-weight": weight,
+    fill: INK,
+    class: `wheel-label ${className}`
+  });
+  const lh = fs * 1.12;
+  lines.forEach((l, i) => {
+    const ts = node("tspan", { x: 0, dy: i === 0 ? (-(lines.length - 1) / 2) * lh + fs * 0.35 : lh });
+    ts.textContent = l;
+    t.appendChild(ts);
+  });
+  return t;
+}
+
+function segment({ d, fill, label, ariaLabel, onActivate, className = "" }) {
+  const g = node("g", { class: `seg ${className}`, role: "button", tabindex: "0", "aria-label": ariaLabel });
+  g.appendChild(node("path", { d, fill, class: "seg-fill" }));
+  if (label) g.appendChild(label);
+  g.addEventListener("click", onActivate);
+  g.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onActivate();
+    }
+  });
+  return g;
+}
+
+function reduced() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+export function createWheel({ onPick, onViewChange }) {
   const root = document.createElement("div");
-  root.className = "wheel-root";
-  const svg = svgEl("svg", { viewBox: "-300 -300 600 600", role: "group", "aria-label": "Feelings wheel" });
+  root.className = "wheel";
+  const svg = node("svg", { viewBox: "-300 -300 600 600", class: "wheel-svg", role: "group", "aria-label": "Places we go wheel" });
   root.appendChild(svg);
+  let current = null;
 
-  function labelSize(ring) {
-    if (ring === "core") return 15;
-    if (ring === "middle") return 12;
-    return 10;
-  }
+  function paintOverview() {
+    svg.textContent = "";
+    const step = 360 / TOTAL;
+    let a = -(PLACES[0].items.length * step) / 2;
+    const wide = root.getBoundingClientRect().width >= 520;
 
-  function addSegment({ r0, r1, a0, a1, fill, key, ring, text, ariaLabel, forceLabel }) {
-    const mid = (a0 + a1) / 2;
-    const g = svgEl("g", {
-      role: "button",
-      tabindex: "0",
-      "aria-pressed": selection.has(key) ? "true" : "false",
-      "aria-label": ariaLabel,
-      "data-key": key
-    });
-    const path = svgEl("path", { d: arcPath(r0, r1, a0, a1), fill, stroke: "var(--bg)", "stroke-width": "1.5" });
-    g.appendChild(path);
-
-    if (selection.has(key)) {
-      const outline = svgEl("path", {
-        d: arcPath(r0, r1, a0, a1),
-        fill: "none",
-        stroke: "#1D2733",
-        "stroke-width": "3"
+    for (const place of PLACES) {
+      const a0 = a;
+      const a1 = a + place.items.length * step;
+      svg.appendChild(segment({
+        d: arcPath(78, 176, a0, a1),
+        fill: place.color,
+        className: "seg-place",
+        label: radialLabel({ text: place.label, r0: 78, r1: 176, a0, a1, max: 12.5, min: 8, weight: 700 }),
+        ariaLabel: `${place.lead} ${place.rest}`,
+        onActivate: () => showPlace(place)
+      }));
+      place.items.forEach((key, i) => {
+        const b0 = a0 + i * step;
+        const b1 = b0 + step;
+        const name = ATLAS[key].name;
+        svg.appendChild(segment({
+          d: arcPath(176, 298, b0, b1),
+          fill: tint(place.color, 0.42),
+          className: "seg-item",
+          label: radialLabel({ text: name, r0: 176, r1: 298, a0: b0, a1: b1, max: 10.5, min: 6.5, weight: 500, pad: 8 }),
+          ariaLabel: `${name}, ${place.lead.toLowerCase()} ${place.rest}`,
+          onActivate: () => (wide ? onPick(key) : showPlace(place))
+        }));
       });
-      g.appendChild(outline);
+      a = a1;
     }
 
-    const narrow = root.clientWidth && root.clientWidth < 560;
-    const showLabel = forceLabel || ring !== "outer" || !narrow;
-    if (showLabel && text) {
-      const rmid = (r0 + r1) / 2;
-      let [lx, ly] = polar(rmid, mid);
-      let rotate = mid;
-      if (mid > 180 && mid < 360) rotate += 180;
-      const t = svgEl("text", {
-        x: lx, y: ly,
-        transform: `rotate(${rotate}, ${lx}, ${ly})`,
-        "text-anchor": "middle",
-        "dominant-baseline": "middle",
-        "font-size": labelSize(ring),
-        "font-weight": selection.has(key) ? 800 : 600,
-        fill: "#1D2733",
-        "font-family": "Nunito, sans-serif",
-        style: "pointer-events:none"
-      });
-      t.textContent = text;
-      g.appendChild(t);
-    }
-
-    function toggle() {
-      onToggle(key);
-    }
-    g.addEventListener("click", (e) => {
-      if (ring !== "core-center") toggle();
+    const center = node("g", { class: "wheel-center", "aria-hidden": "true" });
+    center.appendChild(node("circle", { r: 76, class: "center-disc" }));
+    const t = node("text", { "text-anchor": "middle", class: "center-title" });
+    ["Places we go", "when"].forEach((line, i) => {
+      const ts = node("tspan", { x: 0, dy: i === 0 ? -4 : 26 });
+      ts.textContent = line;
+      t.appendChild(ts);
     });
-    g.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        toggle();
-      }
-    });
-    svg.appendChild(g);
-    return g;
-  }
-
-  function renderOverview() {
-    svg.innerHTML = "";
-    const totalLeaves = 82;
-    let leafIndex = 0;
-    const leafAngle = 360 / totalLeaves;
-
-    // Precompute leaf counts per core.
-    for (const core of CORES) {
-      const mids = WHEEL[core.id];
-      const leavesInCore = mids.length * 2;
-      const startAngle = leafIndex * leafAngle;
-      const endAngle = (leafIndex + leavesInCore) * leafAngle;
-
-      // core ring
-      addSegment({
-        r0: 44, r1: 120, a0: startAngle, a1: endAngle, fill: core.core,
-        key: core.id, ring: "core", text: core.label,
-        ariaLabel: `${core.label} family`
-      });
-
-      // outer ring uses full white ring if any selection in family
-      let midLeaf = leafIndex;
-      for (const mid of mids) {
-        const midStart = midLeaf * leafAngle;
-        const midEnd = (midLeaf + 2) * leafAngle;
-        addSegment({
-          r0: 120, r1: 205, a0: midStart, a1: midEnd, fill: core.mid,
-          key: mid.key, ring: "middle", text: WORDS[mid.key]?.label || mid.key,
-          ariaLabel: `${WORDS[mid.key]?.label || mid.key}, ${core.label} family`
-        });
-        mid.outer.forEach((outerKey, i) => {
-          const oStart = (midLeaf + i) * leafAngle;
-          const oEnd = (midLeaf + i + 1) * leafAngle;
-          addSegment({
-            r0: 205, r1: 298, a0: oStart, a1: oEnd, fill: core.mid,
-            key: outerKey, ring: "outer", text: WORDS[outerKey]?.label || outerKey,
-            ariaLabel: `${WORDS[outerKey]?.label || outerKey}, ${core.label} family`
-          });
-        });
-        midLeaf += 2;
-      }
-      leafIndex += leavesInCore;
-    }
-
-    // center prompt
-    const center = svgEl("g", { "aria-hidden": "true" });
-    const c = svgEl("circle", { cx: 0, cy: 0, r: 44, fill: "var(--surface)" });
-    const t = svgEl("text", {
-      x: 0, y: 0, "text-anchor": "middle", "dominant-baseline": "middle",
-      "font-size": 13, "font-family": "Nunito, sans-serif", fill: "var(--text)"
-    });
-    t.textContent = "Tap a color";
-    center.appendChild(c);
     center.appendChild(t);
     svg.appendChild(center);
-
-    // click on core segment -> focus view. Re-bind since addSegment's toggle
-    // selects the core word; we want core taps to open focus instead unless already
-    // has multiple leaves selected. We attach a second listener with capture.
-    svg.querySelectorAll('g[data-key]').forEach((g) => {
-      const key = g.getAttribute("data-key");
-      const core = CORES.find((c) => c.id === key);
-      if (core) {
-        g.addEventListener("click", (e) => {
-          e.stopImmediatePropagation();
-          openFocus(core.id);
-        }, true);
-        g.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-            openFocus(core.id);
-          }
-        }, true);
-      }
-    });
   }
 
-  function renderFocus(familyId) {
-    svg.innerHTML = "";
-    const core = CORES.find((c) => c.id === familyId);
-    const mids = WHEEL[familyId];
-    const leaves = mids.length * 2;
-    const leafAngle = 360 / leaves;
+  function paintPlace(place) {
+    svg.textContent = "";
+    const n = place.items.length;
+    const step = 360 / n;
+    const offset = -step / 2;
+    place.items.forEach((key, i) => {
+      const a0 = offset + i * step;
+      const a1 = a0 + step;
+      const name = ATLAS[key].name;
+      svg.appendChild(segment({
+        d: arcPath(104, 298, a0, a1),
+        fill: i % 2 ? tint(place.color, 0.28) : tint(place.color, 0.4),
+        className: "seg-item seg-focus",
+        label: radialLabel({ text: name, r0: 104, r1: 298, a0, a1, max: 21, min: 11, weight: 600, pad: 16 }),
+        ariaLabel: name,
+        onActivate: () => onPick(key)
+      }));
+    });
 
-    let leafIndex = 0;
-    for (const mid of mids) {
-      const midStart = leafIndex * leafAngle;
-      const midEnd = (leafIndex + 2) * leafAngle;
-      addSegment({
-        r0: 44, r1: 205, a0: midStart, a1: midEnd, fill: core.mid,
-        key: mid.key, ring: "middle", text: WORDS[mid.key]?.label || mid.key,
-        ariaLabel: `${WORDS[mid.key]?.label || mid.key}`
-      });
-      mid.outer.forEach((outerKey, i) => {
-        const oStart = (leafIndex + i) * leafAngle;
-        const oEnd = (leafIndex + i + 1) * leafAngle;
-        addSegment({
-          r0: 205, r1: 298, a0: oStart, a1: oEnd, fill: core.mid,
-          key: outerKey, ring: "outer", text: WORDS[outerKey]?.label || outerKey,
-          ariaLabel: `${WORDS[outerKey]?.label || outerKey}`, forceLabel: true
-        });
-      });
-      leafIndex += 2;
+    const center = segment({
+      d: arcPath(0.01, 100, 0, 359.99),
+      fill: place.color,
+      className: "wheel-center focus-center",
+      ariaLabel: "Back to all places",
+      onActivate: () => showOverview()
+    });
+    const lead = node("text", { "text-anchor": "middle", class: "center-lead", y: -30 });
+    lead.textContent = place.lead.toUpperCase();
+    center.appendChild(lead);
+    const lines = wrap(place.rest, 13);
+    const t = node("text", { "text-anchor": "middle", class: "center-rest" });
+    const lh = 21;
+    const startY = lines.length === 1 ? 10 : lines.length === 2 ? 0 : -8;
+    lines.forEach((l, i) => {
+      const ts = node("tspan", { x: 0, y: startY + i * lh });
+      ts.textContent = l;
+      t.appendChild(ts);
+    });
+    center.appendChild(t);
+    svg.appendChild(center);
+  }
+
+  function transition(paint) {
+    if (reduced() || !svg.childNodes.length) {
+      paint();
+      return;
     }
-
-    // center = core word
-    const g = svgEl("g", {
-      role: "button", tabindex: "0",
-      "aria-pressed": selection.has(core.id) ? "true" : "false",
-      "aria-label": `${core.label} (select the core feeling)`,
-      "data-key": core.id
-    });
-    const c = svgEl("path", { d: arcPath(0, 44, 0, 360), fill: core.core });
-    g.appendChild(c);
-    const t = svgEl("text", {
-      x: 0, y: 0, "text-anchor": "middle", "dominant-baseline": "middle",
-      "font-size": 15, "font-weight": 700, fill: "#1D2733", "font-family": "Nunito, sans-serif"
-    });
-    t.textContent = core.label;
-    g.appendChild(t);
-    g.addEventListener("click", () => onToggle(core.id));
-    g.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(core.id); }
-    });
-    svg.appendChild(g);
-
-    // Back button
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "btn-link wheel-back";
-    back.textContent = "All colors";
-    back.addEventListener("click", () => openOverview());
-    root.querySelectorAll(".wheel-back").forEach((b) => b.remove());
-    root.appendChild(back);
+    svg.classList.add("is-leaving");
+    setTimeout(() => {
+      paint();
+      svg.classList.remove("is-leaving");
+      svg.classList.add("is-entering");
+      requestAnimationFrame(() => requestAnimationFrame(() => svg.classList.remove("is-entering")));
+    }, 180);
   }
 
-  function openFocus(familyId) {
-    view = { family: familyId };
-    render();
-  }
-  function openOverview() {
-    view = "overview";
-    render();
+  function showOverview() {
+    current = null;
+    transition(paintOverview);
+    onViewChange && onViewChange(null);
   }
 
-  function render() {
-    root.querySelectorAll(".wheel-back").forEach((b) => b.remove());
-    if (view === "overview") renderOverview();
-    else renderFocus(view.family);
+  function showPlace(place) {
+    current = place;
+    transition(() => paintPlace(place));
+    onViewChange && onViewChange(place);
   }
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && view !== "overview" && root.isConnected) openOverview();
+  root.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && current) showOverview();
   });
-
-  render();
 
   return {
     el: root,
-    rerender: render,
-    isOverview: () => view === "overview"
+    mount() {
+      if (current) paintPlace(current);
+      else paintOverview();
+    },
+    showOverview,
+    showPlace,
+    get place() { return current; }
   };
 }
 
-export function renderMiniWheel(container) {
-  container.innerHTML = "";
-  const svg = svgEl("svg", { viewBox: "-300 -300 600 600", "aria-hidden": "true", class: "mini-wheel" });
-  const totalLeaves = 82;
-  const leafAngle = 360 / totalLeaves;
-  let leafIndex = 0;
-  for (const core of CORES) {
-    const mids = WHEEL[core.id];
-    const leavesInCore = mids.length * 2;
-    const startAngle = leafIndex * leafAngle;
-    const endAngle = (leafIndex + leavesInCore) * leafAngle;
-    svg.appendChild(svgEl("path", { d: arcPath(44, 120, startAngle, endAngle), fill: core.core, stroke: "var(--bg)", "stroke-width": 1.5 }));
-    let midLeaf = leafIndex;
-    for (const mid of mids) {
-      svg.appendChild(svgEl("path", { d: arcPath(120, 205, midLeaf * leafAngle, (midLeaf + 2) * leafAngle), fill: core.mid, stroke: "var(--bg)", "stroke-width": 1.5 }));
-      mid.outer.forEach((_, i) => {
-        svg.appendChild(svgEl("path", { d: arcPath(205, 298, (midLeaf + i) * leafAngle, (midLeaf + i + 1) * leafAngle), fill: core.mid, stroke: "var(--bg)", "stroke-width": 1.5 }));
-      });
-      midLeaf += 2;
-    }
-    leafIndex += leavesInCore;
-  }
-  container.appendChild(svg);
-  if (!reducedMotion()) {
-    svg.style.animation = "spin 120s linear infinite";
+export function placeOf(key) {
+  return PLACES.find((p) => p.items.includes(key));
+}
+
+// A small, label-free wheel for decoration (welcome screen, icon).
+export function miniWheel(size = 120) {
+  const svg = node("svg", { viewBox: "-300 -300 600 600", width: size, height: size, class: "mini-wheel", "aria-hidden": "true" });
+  const step = 360 / TOTAL;
+  let a = -(PLACES[0].items.length * step) / 2;
+  for (const place of PLACES) {
+    const a1 = a + place.items.length * step;
+    svg.appendChild(node("path", { d: arcPath(90, 180, a, a1), fill: place.color, class: "mini-seg" }));
+    svg.appendChild(node("path", { d: arcPath(180, 298, a, a1), fill: tint(place.color, 0.42), class: "mini-seg" }));
+    a = a1;
   }
   return svg;
 }

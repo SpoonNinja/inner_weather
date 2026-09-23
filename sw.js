@@ -1,64 +1,41 @@
-// sw.js
-// Simple offline-first service worker for Inner Weather.
-const CACHE_NAME = "iw-v1";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./404.html",
-  "./manifest.webmanifest",
-  "./css/styles.css",
-  "./js/config.js",
-  "./js/app.js",
-  "./js/wheel.js",
-  "./js/weather.js",
-  "./js/storage.js",
-  "./js/share.js",
-  "./js/data/wheel.js",
-  "./js/data/atlas.js",
-  "./js/data/contexts.js",
-  "./icons/icon.svg"
+// sw.js: offline support. Bump CACHE when you ship changes.
+const CACHE = "iw-v2";
+const SHELL = [
+  "./", "./index.html", "./manifest.webmanifest", "./css/styles.css",
+  "./js/app.js", "./js/config.js", "./js/wheel.js", "./js/breath.js", "./js/storage.js",
+  "./js/data/atlas.js", "./js/data/insights.js", "./icons/icon.svg",
+  "./fonts/fraunces.woff2", "./fonts/fraunces-italic.woff2", "./fonts/inter.woff2"
 ];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+  if (e.request.method !== "GET") return;
   if (url.origin === location.origin) {
-    // cache-first for same-origin assets
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        }).catch(() => caches.match("./index.html"));
-      })
+    // Network first so updates show up, falling back to cache offline.
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+        return res;
+      }).catch(() => caches.match(e.request).then((r) => r || caches.match("./index.html")))
     );
-  } else if (url.hostname.includes("fonts.g")) {
-    // stale-while-revalidate for Google Fonts
-    event.respondWith(
-      caches.open(CACHE_NAME).then((cache) =>
-        cache.match(event.request).then((cached) => {
-          const fetchPromise = fetch(event.request).then((response) => {
-            cache.put(event.request, response.clone());
-            return response;
-          }).catch(() => cached);
-          return cached || fetchPromise;
-        })
-      )
+  } else if (url.hostname.endsWith("googleapis.com") || url.hostname.endsWith("gstatic.com")) {
+    e.respondWith(
+      caches.open(CACHE).then((c) => c.match(e.request).then((hit) => {
+        const net = fetch(e.request).then((res) => { c.put(e.request, res.clone()); return res; }).catch(() => hit);
+        return hit || net;
+      }))
     );
   }
 });

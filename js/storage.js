@@ -1,25 +1,25 @@
 // js/storage.js
-// Settings and entry history, all in localStorage. Everything is wrapped in
-// try/catch so the app still works in private browsing or with storage blocked.
+// Everything lives in this browser. Every call is guarded so the app still works
+// when storage is blocked (private browsing, strict settings).
 
-const SETTINGS_KEY = "iw.v1.settings";
-const ENTRIES_KEY = "iw.v1.entries";
-const MAX_ENTRIES = 2000;
+const SETTINGS_KEY = "iw.v2.settings";
+const ENTRIES_KEY = "iw.v2.entries";
+const MAX_ENTRIES = 1000;
 
-function safeParse(json, fallback) {
+function read(key, fallback) {
   try {
-    const value = JSON.parse(json);
-    return value == null ? fallback : value;
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const value = JSON.parse(raw);
+    return value ?? fallback;
   } catch {
     return fallback;
   }
 }
 
-export function storageAvailable() {
+function write(key, value) {
   try {
-    const k = "__iw_test__";
-    localStorage.setItem(k, "1");
-    localStorage.removeItem(k);
+    localStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
     return false;
@@ -27,61 +27,33 @@ export function storageAvailable() {
 }
 
 export function getSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    return safeParse(raw, defaultSettings());
-  } catch {
-    return defaultSettings();
-  }
-}
-
-function defaultSettings() {
-  return { theme: "system", usualContext: null, lastContext: null, seenPrivacyNote: false };
+  return { name: "", ...read(SETTINGS_KEY, {}) };
 }
 
 export function saveSettings(patch) {
-  try {
-    const current = getSettings();
-    const next = { ...current, ...patch };
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-    return next;
-  } catch {
-    return { ...defaultSettings(), ...patch };
-  }
+  const next = { ...getSettings(), ...patch };
+  write(SETTINGS_KEY, next);
+  return next;
 }
 
 export function getEntries() {
-  try {
-    const raw = localStorage.getItem(ENTRIES_KEY);
-    return safeParse(raw, []);
-  } catch {
-    return [];
-  }
+  const list = read(ENTRIES_KEY, []);
+  return Array.isArray(list) ? list : [];
 }
 
 export function addEntry(entry) {
-  try {
-    const entries = getEntries();
-    entries.unshift(entry);
-    if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES;
-    localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
-    return true;
-  } catch {
-    return false;
-  }
+  const list = getEntries();
+  list.unshift(entry);
+  if (list.length > MAX_ENTRIES) list.length = MAX_ENTRIES;
+  return write(ENTRIES_KEY, list);
 }
 
-export function deleteEntry(id) {
-  try {
-    const entries = getEntries().filter((e) => e.id !== id);
-    localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
-    return true;
-  } catch {
-    return false;
-  }
+export function updateEntry(id, patch) {
+  const list = getEntries().map((e) => (e.id === id ? { ...e, ...patch } : e));
+  return write(ENTRIES_KEY, list);
 }
 
-export function deleteAllEntries() {
+export function clearEntries() {
   try {
     localStorage.removeItem(ENTRIES_KEY);
     return true;
@@ -90,41 +62,10 @@ export function deleteAllEntries() {
   }
 }
 
-export function importEntries(entries) {
-  try {
-    if (!Array.isArray(entries)) return false;
-    const existing = getEntries();
-    const ids = new Set(existing.map((e) => e.id));
-    const merged = existing.concat(entries.filter((e) => e && e.id && !ids.has(e.id)));
-    merged.sort((a, b) => new Date(b.ts) - new Date(a.ts));
-    if (merged.length > MAX_ENTRIES) merged.length = MAX_ENTRIES;
-    localStorage.setItem(ENTRIES_KEY, JSON.stringify(merged));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function exportJSON() {
-  return JSON.stringify(getEntries(), null, 2);
-}
-
-export function exportCSV() {
-  const entries = getEntries();
-  const cols = ["id", "ts", "mode", "context", "contextLabel", "energy", "feelings", "weather", "note", "intention"];
-  const rows = [cols.join(",")];
-  for (const e of entries) {
-    const feelings = (e.feelings || []).map((f) => f.label).join("; ");
-    const row = [
-      e.id, e.ts, e.mode, e.context, e.contextLabel, e.energy ?? "",
-      feelings, e.weather, e.note || "", e.intention || ""
-    ].map((v) => `"${String(v).replace(/"/g, '""')}"`);
-    rows.push(row.join(","));
-  }
-  return rows.join("\n");
-}
-
 export function makeId() {
-  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
 }

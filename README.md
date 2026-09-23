@@ -1,50 +1,38 @@
 # Inner Weather
 
-A mindfulness check-in web app for naming feelings before whatever comes next. Plain HTML, CSS, and vanilla JavaScript. No build step, no backend, no accounts, no analytics. Everything the user enters stays in their browser (localStorage).
+A one-minute pause: breathe, name what you're feeling, and choose what to do with it.
 
-## Run it locally
+Live at https://spoonninja.github.io/inner_weather/
 
-From this folder:
+## The flow
+
+1. **Breathe.** Three guided breaths (in 4, hold 2, out 6).
+2. **Find the place.** The "places we go when..." wheel, 13 places and 89 feelings, inspired by *Atlas of the Heart*.
+3. **Check the fit.** A short description of the feeling. Optionally explore it in your own words. "Yes, that's it" moves on; "Not quite" shows the feelings that sit closest to it.
+4. **Set an intention.** What the feeling may be telling you, four ideas to respond, and a space to write your own.
+5. **Share, if you want.** Sends what you landed on with a link that invites the other person to check in and send theirs back.
+
+Everything stays in the browser (localStorage). No accounts, no tracking, no backend.
+
+## Run locally
 
 ```
 python3 -m http.server 8000
 ```
 
-Then open http://localhost:8000 in a browser. ES modules do not load from `file://`, so always use a local server.
+Then open http://localhost:8000.
 
-## Deploy for free
+## Files
 
-### Option A: GitHub Pages (recommended)
+- `js/data/atlas.js`: every feeling's description, reflection question, and look-alike note.
+- `js/data/insights.js`: the wheel layout and colors, plus each feeling's signal, four intention ideas, and nearby feelings.
+- `js/wheel.js`, `js/breath.js`, `js/app.js`: the wheel, the breathing guide, and the screens.
+- `fonts/`: self-hosted Fraunces and Inter (SIL Open Font License), so the app works offline.
 
-1. Sign in at github.com and create a new public repository named `inner-weather`.
-2. On the repo page, choose "Add file," then "Upload files," and drag in the contents of this folder so that `index.html` sits at the top level of the repo, not inside a subfolder. Commit.
-3. Go to Settings, then Pages. Under "Build and deployment," set Source to "Deploy from a branch," choose `main` and `/ (root)`, and save.
-4. After a minute or two the site is live at `https://YOUR-USERNAME.github.io/inner-weather/`.
-5. Open `js/config.js`, set `APP_URL` to that address, and commit again.
-6. On your phone, open the link and add it to your home screen.
+## Updating
 
-### Option B: Netlify Drop (fastest)
+Upload changed files to the repo, then bump `CACHE` in `sw.js` (for example `iw-v3`) so installed copies refresh.
 
-Go to app.netlify.com/drop and drag this folder onto the page, then create a free account to keep the site. Rename it under Site settings to get a friendlier URL. Update `APP_URL` in `js/config.js` and drag the folder again to redeploy.
+## Credits
 
-## Changing the name or URL
-
-Everything lives in one place: `js/config.js` (`APP_NAME`, `APP_URL`, `VERSION`). When you update the app after it's live, bump `VERSION` there and the `CACHE_NAME` in `sw.js` so installed copies pick up the update.
-
-## What's included
-
-- The full check-in flow: context, breathe, energy and body, the feelings wheel, understand cards, an optional "go deeper" step, and an intention step that names your "inner weather."
-- The feelings wheel as an interactive SVG (overview and per-family focus views), plus a fully accessible list view.
-- History with a 30-day summary, export to JSON/CSV, import, and delete.
-- An Explore Feelings library covering all 89 entries, grouped as in the plan.
-- A PWA manifest and service worker so it installs to a home screen and works offline after the first visit.
-- Care callouts with the 988 Suicide & Crisis Lifeline and findahelpline.com, shown gently and never blocking the flow.
-
-## What I could not fully complete in this pass
-
-- The wheel's keyboard arrow-key navigation between segments (Tab/Enter/Space work; left/right/up/down ring navigation is not wired up).
-- Full automated screenshot testing at 390x844 and 1280x800 for every milestone (the app was built and spot-checked, but a full Playwright screenshot pass across every screen was not run in this environment).
-- Lighthouse PWA audit was not run here; the manifest and service worker follow the spec, but verify installability once deployed.
-- The maskable icon uses a simple 70% scale-down for safe-zone padding rather than a hand-tuned crop.
-
-Everything else in the plan (all three data files copied exactly, all milestones' functionality, the credits and safety copy, the deploy instructions) is implemented.
+Places and feelings inspired by *Atlas of the Heart* by Brené Brown (Random House, 2021). All descriptions are written in our own words. Not affiliated with or endorsed by Brené Brown or her publisher. Inner Weather is a reflection tool, not therapy or medical advice.
